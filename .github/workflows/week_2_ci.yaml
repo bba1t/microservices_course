@@ -32,10 +32,6 @@ jobs:
         run: docker login -u ${{ secrets.REGISTRY_USERNAME }} -p ${{ secrets.REGISTRY_PASSWORD }} $REGISTRY
 
       - name: Build and Push Docker Image
-        #uses: docker/build-push-action@v6.9.0
-        #with:
-          #push: true
-          #tags: ${{env.REGISTRY}}/${{env.IMAGE_NAME}}:latest
         # TAG_NAME - тег образа на основе первых 7 символов хэша коммита
         run: |
           TAG_NAME=$(echo $GITHUB_SHA | head -c7)
@@ -57,7 +53,7 @@ jobs:
         with:
           host: ${{ secrets.SERVER_HOST }} # id
           username: ${{ secrets.SSH_USERNAME }} # root
-          key: ${{ secrets.SSHKEY }}
+          key: ${{ secrets.SSHKEY }}  # private key
           envs: IMAGE_NAME,REGISTRY,GITHUB_SHA,CONTAINER_NAME
           script: |
             # Set up variables
