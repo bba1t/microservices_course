@@ -1,0 +1,73 @@
+name: CI
+
+# когда выполнять действия
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+# переменные окружения
+env:
+  REGISTRY: "cr.selcloud.ru/grpc"
+  IMAGE_NAME: "crud-server"
+  CONTAINER_NAME: "crud-server-container"
+
+# задачи для запуска
+jobs:
+  image-build-and-push:
+    # на какой машине запускать
+    runs-on: ubuntu-latest
+
+    steps:
+      # перехожу на ветку мастер
+      - name: Checkout master
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3.7.1
+
+      # Логинюсь на удаленном Container Registry, так же как и локально
+      - name: Login to Docker Registry
+        run: docker login -u ${{ secrets.REGISTRY_USERNAME }} -p ${{ secrets.REGISTRY_PASSWORD }} $REGISTRY
+
+      - name: Build and Push Docker Image
+        # TAG_NAME - тег образа на основе первых 7 символов хэша коммита
+        run: |
+          TAG_NAME=$(echo $GITHUB_SHA | head -c7)
+          docker buildx create --use
+          docker buildx build --no-cache --push --tag $REGISTRY/$IMAGE_NAME:$TAG_NAME -f week_2/grpc/Dockerfile week_2/grpc/
+        # Билдит образ(images) из описанного dockerfile
+        # собирается Docker-образ из указанного(-f week_2/grpc/Dockerfile) Dockerfile и публикуется(--push) в регистр с указанным контекстом(week_2/grpc/)
+
+  # вторая цель
+  deploy-image:
+    runs-on: ubuntu-latest
+    # выполнять можно только после предыдущей цели
+    needs: image-build-and-push
+
+    steps:
+      - name: Deploy to Selectel Cloud via SSH action
+        # подключение к серваку по ssh с выполнением команд ниже
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SERVER_HOST }} # id
+          username: ${{ secrets.SSH_USERNAME }} # root
+          key: ${{ secrets.SSHKEY }}  # private key
+          envs: IMAGE_NAME,REGISTRY,GITHUB_SHA,CONTAINER_NAME
+          script: |
+            # Set up variables
+            TAG_NAME=$(echo $GITHUB_SHA | head -c7)
+            
+            # Login into Selectel Registry
+            docker login -u ${{ secrets.REGISTRY_USERNAME }} -p ${{ secrets.REGISTRY_PASSWORD }} $REGISTRY
+            
+            # Stop running container
+            docker stop $CONTAINER_NAME
+            
+            # Remove old container
+            docker rm $CONTAINER_NAME
+            
+            # Run a new container from a new image
+            # Если запускать так, можно пропустить этап с pull, он произойдет автоматически
+            docker run -d -p 50051:50051 --name $CONTAINER_NAME -t $REGISTRY/$IMAGE_NAME:$TAG_NAME
